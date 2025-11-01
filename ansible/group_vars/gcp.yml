@@ -1,0 +1,53 @@
+---
+# Variables específicas para despliegue en GCP/GKE
+# Estas variables sobreescriben las de all.yml cuando se despliega en GCP
+
+# Usar manifiestos de GCP
+k8s_manifests_dir: "{{ k8s_manifests_dir_gcp }}"
+
+# Configuración específica de GCP
+gcp:
+  project_id: "{{ gcp_project_id }}"
+  zone: "{{ gcp_zone }}"
+  region: "{{ gcp_region }}"
+  cluster:
+    name: "{{ cluster_name }}"
+    machine_type: "{{ machine_type }}"
+    num_nodes: "{{ num_nodes }}"
+    min_nodes: "{{ min_nodes }}"
+    max_nodes: "{{ max_nodes }}"
+    disk_size: "{{ disk_size }}"
+    disk_type: "{{ disk_type }}"
+    enable_cloud_logging: "{{ enable_cloud_logging }}"
+    enable_cloud_monitoring: "{{ enable_cloud_monitoring }}"
+    addons: "{{ cluster_addons }}"
+
+# Manifiestos a desplegar en GCP
+gcp_manifests:
+  - name: namespace
+    path: "{{ k8s_manifests_dir }}/namespace.yaml"
+  - name: database
+    path: "{{ k8s_manifests_dir }}/db-gcp.yaml"
+  - name: backend
+    path: "{{ k8s_manifests_dir }}/backend-gcp.yaml"
+  - name: frontend
+    path: "{{ k8s_manifests_dir }}/frontend-gcp.yaml"
+  - name: ingress
+    path: "{{ k8s_manifests_dir }}/ingress-gcp.yaml"
+
+# Orden de despliegue
+deploy_order:
+  - namespace
+  - database
+  - backend
+  - frontend
+  - ingress
+
+# Servicios a esperar que estén listos
+wait_for_pods:
+  - app: todo-db
+    timeout: "{{ pod_ready_timeout }}"
+  - app: todo-backend
+    timeout: "{{ pod_ready_timeout }}"
+  - app: todo-frontend
+    timeout: "{{ pod_ready_timeout }}"

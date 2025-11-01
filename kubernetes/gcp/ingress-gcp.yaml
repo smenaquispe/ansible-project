@@ -1,0 +1,37 @@
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: todo-app-ingress
+  namespace: todo-app
+  annotations:
+    kubernetes.io/ingress.class: "gce"
+    # Habilitar CORS y headers correctos
+    nginx.ingress.kubernetes.io/enable-cors: "true"
+    # Timeout más largo para el backend
+    nginx.ingress.kubernetes.io/proxy-read-timeout: "60"
+    nginx.ingress.kubernetes.io/proxy-send-timeout: "60"
+    # Opcional: Reservar una IP estática (descomenta cuando reserves una IP)
+    # kubernetes.io/ingress.global-static-ip-name: "todo-app-ip"
+spec:
+  rules:
+    - http:
+        paths:
+          # Backend API - PRIMERO (más específico)
+          # Todas las rutas que empiezan con /api van al backend
+          - path: /api/*
+            pathType: ImplementationSpecific
+            backend:
+              service:
+                name: todo-backend
+                port:
+                  number: 5000
+
+          # Frontend - ÚLTIMO (catch-all para todo lo demás)
+          # Esto incluye /, /index.html, /assets/*, etc.
+          - path: /*
+            pathType: ImplementationSpecific
+            backend:
+              service:
+                name: todo-frontend
+                port:
+                  number: 80

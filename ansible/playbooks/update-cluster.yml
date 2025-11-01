@@ -1,0 +1,135 @@
+---
+# Playbook para actualizar cluster GKE existente
+# Uso: ansible-playbook -i inventory/hosts playbooks/update-cluster.yml
+
+- name: Update GKE Cluster
+  hosts: gcp
+  gather_facts: false
+  vars_files:
+    - ../group_vars/all.yml
+    - ../group_vars/gcp.yml
+
+  tasks:
+    - name: Get GCP project ID
+      set_fact:
+        actual_project_id: "{{ gcp_project_id if (gcp_project_id is defined and gcp_project_id | length > 0) else lookup('pipe', 'gcloud config get-value project 2>/dev/null') }}"
+
+    - name: Display update configuration
+      debug:
+        msg:
+          - "Project ID:    {{ actual_project_id }}"
+          - "Zone:          {{ gcp_zone }}"
+          - "Cluster Name:  {{ cluster_name }}"
+          - "Target Nodes:  {{ num_nodes }}"
+          - "Autoscaling:   {{ min_nodes }}-{{ max_nodes }} nodes"
+
+    - name: Check if cluster exists
+      command: >
+        gcloud container clusters describe {{ cluster_name }}
+        --zone={{ gcp_zone }}
+        --project={{ actual_project_id }}
+      register: cluster_exists
+      failed_when: false
+      changed_when: false
+
+    - name: Fail if cluster doesn't exist
+      fail:
+        msg: "Cluster '{{ cluster_name }}' does not exist. Use create-cluster.yml first."
+      when: cluster_exists.rc != 0
+
+    - name: Get current node pool info
+      command: >
+        gcloud container node-pools describe default-pool
+        --cluster={{ cluster_name }}
+        --zone={{ gcp_zone }}
+        --project={{ actual_project_id }}
+        --format=json
+      register: nodepool_info
+      changed_when: false
+
+    - name: Parse node pool info
+      set_fact:
+        current_node_count: "{{ (nodepool_info.stdout | from_json).initialNodeCount }}"
+        current_min_nodes: "{{ (nodepool_info.stdout | from_json).autoscaling.minNodeCount | default(min_nodes) }}"
+        current_max_nodes: "{{ (nodepool_info.stdout | from_json).autoscaling.maxNodeCount | default(max_nodes) }}"
+
+    - name: Display current vs target configuration
+      debug:
+        msg:
+          - "Current Nodes: {{ current_node_count }}"
+          - "Target Nodes:  {{ num_nodes }}"
+          - "Current Min:   {{ current_min_nodes }}"
+          - "Target Min:    {{ min_nodes }}"
+          - "Current Max:   {{ current_max_nodes }}"
+          - "Target Max:    {{ max_nodes }}"
+
+    - name: Update autoscaling settings
+      command: >
+        gcloud container clusters update {{ cluster_name }}
+        --zone={{ gcp_zone }}
+        --project={{ actual_project_id }}
+        --enable-autoscaling
+        --min-nodes={{ min_nodes }}
+        --max-nodes={{ max_nodes }}
+        --node-pool=default-pool
+        --quiet
+      when: current_min_nodes|int != min_nodes|int or current_max_nodes|int != max_nodes|int
+      register: autoscaling_update
+
+    - name: Resize node pool
+      command: >
+        gcloud container clusters resize {{ cluster_name }}
+        --zone={{ gcp_zone }}
+        --project={{ actual_project_id }}
+        --node-pool=default-pool
+        --num-nodes={{ num_nodes }}
+        --quiet
+      when: current_node_count|int != num_nodes|int
+      register: resize_result
+
+    - name: Wait for cluster to be ready
+      command: >
+        gcloud container clusters describe {{ cluster_name }}
+        --zone={{ gcp_zone }}
+        --project={{ actual_project_id }}
+        --format="value(status)"
+      register: cluster_status
+      until: cluster_status.stdout == "RUNNING"
+      retries: 30
+      delay: 10
+      changed_when: false
+
+    - name: Get cluster credentials
+      command: >
+        gcloud container clusters get-credentials {{ cluster_name }}
+        --zone={{ gcp_zone }}
+        --project={{ actual_project_id }}
+      changed_when: true
+
+    - name: Verify cluster connection
+      command: kubectl cluster-info
+      register: cluster_info
+      changed_when: false
+
+    - name: Get updated cluster nodes
+      command: kubectl get nodes
+      register: nodes_info
+      changed_when: false
+
+    - name: Display updated nodes
+      debug:
+        var: nodes_info.stdout_lines
+
+    - name: Display update summary
+      debug:
+        msg:
+          - "✓ Cluster update completed successfully!"
+          - ""
+          - "Updated configuration:"
+          - "  Nodes:      {{ num_nodes }}"
+          - "  Autoscaling: {{ min_nodes }}-{{ max_nodes }}"
+          - ""
+          - "⚠️  COST INFORMATION"
+          - "GKE Management: {{ estimated_costs.gke_management }}"
+          - "Load Balancer:  {{ estimated_costs.load_balancer }}"
+          - "Total:          {{ estimated_costs.total }}"

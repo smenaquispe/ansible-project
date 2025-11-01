@@ -1,0 +1,106 @@
+---
+# Playbook para crear cluster GKE en Google Cloud Platform
+# Uso: ansible-playbook -i inventory/hosts playbooks/create-cluster.yml
+
+- name: Create GKE Cluster
+  hosts: gcp
+  gather_facts: false
+  vars_files:
+    - ../group_vars/all.yml
+    - ../group_vars/gcp.yml
+
+  tasks:
+    - name: Get GCP project ID
+      set_fact:
+        actual_project_id: "{{ gcp_project_id if (gcp_project_id is defined and gcp_project_id | length > 0) else lookup('pipe', 'gcloud config get-value project 2>/dev/null') }}"
+
+    - name: Display cluster configuration
+      debug:
+        msg:
+          - "Project ID:    {{ actual_project_id }}"
+          - "Zone:          {{ gcp_zone }}"
+          - "Cluster Name:  {{ cluster_name }}"
+          - "Machine Type:  {{ machine_type }}"
+          - "Num Nodes:     {{ num_nodes }}"
+          - "Autoscaling:   {{ min_nodes }}-{{ max_nodes }} nodes"
+
+    - name: Check if cluster already exists
+      command: >
+        gcloud container clusters describe {{ cluster_name }}
+        --zone={{ gcp_zone }}
+        --project={{ actual_project_id }}
+      register: cluster_exists
+      failed_when: false
+      changed_when: false
+
+    - name: Cluster already exists
+      debug:
+        msg: "Cluster '{{ cluster_name }}' already exists. Skipping creation."
+      when: cluster_exists.rc == 0
+
+    - name: Enable required GCP APIs
+      command: >
+        gcloud services enable {{ item }}
+        --project={{ actual_project_id }}
+        --quiet
+      loop:
+        - container.googleapis.com
+        - compute.googleapis.com
+      when: cluster_exists.rc != 0
+
+    - name: Create GKE cluster
+      command: >
+        gcloud container clusters create {{ cluster_name }}
+        --zone={{ gcp_zone }}
+        --project={{ actual_project_id }}
+        --machine-type={{ machine_type }}
+        --num-nodes={{ num_nodes }}
+        --disk-size={{ disk_size }}
+        --disk-type={{ disk_type }}
+        --enable-autoscaling
+        --min-nodes={{ min_nodes }}
+        --max-nodes={{ max_nodes }}
+        --enable-autorepair
+        --enable-autoupgrade
+        {% if not enable_cloud_logging %}--no-enable-cloud-logging{% endif %}
+        {% if not enable_cloud_monitoring %}--no-enable-cloud-monitoring{% endif %}
+        --addons={{ cluster_addons | join(',') }}
+        --quiet
+      when: cluster_exists.rc != 0
+      register: cluster_creation
+
+    - name: Get cluster credentials
+      command: >
+        gcloud container clusters get-credentials {{ cluster_name }}
+        --zone={{ gcp_zone }}
+        --project={{ actual_project_id }}
+      changed_when: true
+
+    - name: Verify cluster connection
+      command: kubectl cluster-info
+      register: cluster_info
+      changed_when: false
+
+    - name: Display cluster info
+      debug:
+        var: cluster_info.stdout_lines
+
+    - name: Get cluster nodes
+      command: kubectl get nodes
+      register: nodes_info
+      changed_when: false
+
+    - name: Display nodes
+      debug:
+        var: nodes_info.stdout_lines
+
+    - name: Display cost information
+      debug:
+        msg:
+          - "⚠️  COST INFORMATION"
+          - "GKE Management: {{ estimated_costs.gke_management }}"
+          - "Load Balancer:  {{ estimated_costs.load_balancer }}"
+          - "Total:          {{ estimated_costs.total }}"
+          - "Free Tier:      {{ estimated_costs.free_tier }}"
+          - ""
+          - "To delete cluster: ansible-playbook playbooks/delete-cluster.yml"

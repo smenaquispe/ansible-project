@@ -1,0 +1,75 @@
+---
+# Playbook para eliminar cluster GKE
+# Uso: ansible-playbook -i inventory/hosts playbooks/delete-cluster.yml
+
+- name: Delete GKE Cluster
+  hosts: gcp
+  gather_facts: false
+  vars_files:
+    - ../group_vars/all.yml
+    - ../group_vars/gcp.yml
+
+  tasks:
+    - name: Get GCP project ID
+      set_fact:
+        actual_project_id: "{{ gcp_project_id if (gcp_project_id is defined and gcp_project_id | length > 0) else lookup('pipe', 'gcloud config get-value project 2>/dev/null') }}"
+
+    - name: Display cluster to be deleted
+      debug:
+        msg:
+          - "⚠️  WARNING: This will DELETE the following cluster:"
+          - "Project ID:    {{ actual_project_id }}"
+          - "Zone:          {{ gcp_zone }}"
+          - "Cluster Name:  {{ cluster_name }}"
+          - ""
+          - "This action CANNOT be undone!"
+
+    - name: Check if cluster exists
+      command: >
+        gcloud container clusters describe {{ cluster_name }}
+        --zone={{ gcp_zone }}
+        --project={{ actual_project_id }}
+      register: cluster_exists
+      failed_when: false
+      changed_when: false
+
+    - name: Cluster not found
+      debug:
+        msg: "Cluster '{{ cluster_name }}' does not exist in zone '{{ gcp_zone }}'"
+      when: cluster_exists.rc != 0
+
+    - name: Confirm deletion
+      pause:
+        prompt: "Type 'DELETE' to confirm cluster deletion"
+      register: confirmation
+      when: cluster_exists.rc == 0
+
+    - name: Abort if not confirmed
+      fail:
+        msg: "Deletion cancelled by user"
+      when:
+        - cluster_exists.rc == 0
+        - confirmation.user_input != "DELETE"
+
+    - name: Delete GKE cluster
+      command: >
+        gcloud container clusters delete {{ cluster_name }}
+        --zone={{ gcp_zone }}
+        --project={{ actual_project_id }}
+        --quiet
+      when:
+        - cluster_exists.rc == 0
+        - confirmation.user_input == "DELETE"
+      register: deletion_result
+
+    - name: Cluster deleted successfully
+      debug:
+        msg:
+          - "✓ Cluster deleted successfully"
+          - "No more costs will be incurred from this cluster"
+          - ""
+          - "Check for orphaned resources:"
+          - "  gcloud compute forwarding-rules list"
+          - "  gcloud compute disks list"
+          - "  gcloud compute addresses list"
+      when: deletion_result is changed

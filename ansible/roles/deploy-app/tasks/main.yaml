@@ -1,0 +1,18 @@
+---
+- name: Desplegar base de datos
+  kubernetes.core.k8s:
+    kubeconfig: "{{ kubeconfig_path }}"
+    state: present
+    src: "{{ role_path }}/files/db-deployment.yaml"
+
+- name: Desplegar el backend
+  kubernetes.core.k8s:
+    kubeconfig: "{{ kubeconfig_path }}"
+    state: present
+    src: "{{ role_path }}/files/backend-deployment.yaml"
+
+- name: Desplegar el frontend
+  kubernetes.core.k8s:
+    kubeconfig: "{{ kubeconfig_path }}"
+    state: present
+    src: "{{ role_path }}/files/frontend-deployment.yaml"

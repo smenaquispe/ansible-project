@@ -1,0 +1,8 @@
+[local]
+localhost ansible_connection=local
+
+[gcp]
+localhost ansible_connection=local
+
+[gcp:vars]
+# Las variables específicas de GCP están en group_vars/gcp.yml

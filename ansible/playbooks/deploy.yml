@@ -1,0 +1,51 @@
+---
+- name: Deploy Todo App to Kubernetes
+  hosts: localhost
+  gather_facts: false
+  vars:
+    kubeconfig_path: "~/.kube/config"
+    namespace: "default"
+
+  tasks:
+    - name: Ensure Kubernetes namespace exists
+      kubernetes.core.k8s:
+        kubeconfig: "{{ kubeconfig_path }}"
+        state: present
+        definition:
+          apiVersion: v1
+          kind: Namespace
+          metadata:
+            name: "{{ namespace }}"
+
+    - name: Deploy database
+      kubernetes.core.k8s:
+        kubeconfig: "{{ kubeconfig_path }}"
+        state: present
+        namespace: "{{ namespace }}"
+        src: "{{ playbook_dir }}/../../kubernetes/base/db.yaml"
+
+    - name: Deploy backend
+      kubernetes.core.k8s:
+        kubeconfig: "{{ kubeconfig_path }}"
+        state: present
+        namespace: "{{ namespace }}"
+        src: "{{ playbook_dir }}/../../kubernetes/base/backend.yaml"
+
+    - name: Deploy frontend
+      kubernetes.core.k8s:
+        kubeconfig: "{{ kubeconfig_path }}"
+        state: present
+        namespace: "{{ namespace }}"
+        src: "{{ playbook_dir }}/../../kubernetes/base/frontend.yaml"
+
+    - name: Wait for deployments to be ready
+      kubernetes.core.k8s_info:
+        kubeconfig: "{{ kubeconfig_path }}"
+        kind: Deployment
+        namespace: "{{ namespace }}"
+        label_selectors:
+          - app in (todo-db, todo-backend, todo-frontend)
+      register: deployments
+      until: deployments.resources | selectattr('status.readyReplicas', 'defined') | list | length == 3
+      retries: 30
+      delay: 10

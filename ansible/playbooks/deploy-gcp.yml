@@ -1,0 +1,135 @@
+---
+# Playbook para desplegar la aplicación Todo-App en GKE
+# Uso: ansible-playbook -i inventory/hosts playbooks/deploy-gcp.yml
+
+- name: Deploy Todo App to GKE
+  hosts: gcp
+  gather_facts: false
+  vars_files:
+    - ../group_vars/all.yml
+    - ../group_vars/gcp.yml
+
+  tasks:
+    - name: Display deployment configuration
+      debug:
+        msg:
+          - "Deploying to namespace: {{ k8s_namespace }}"
+          - "Backend replicas:  {{ backend_replicas }}"
+          - "Frontend replicas: {{ frontend_replicas }}"
+          - "DB replicas:       {{ db_replicas }}"
+          - "Manifests dir:     {{ k8s_manifests_dir }}"
+
+    - name: Verify kubectl connection
+      command: kubectl cluster-info
+      register: cluster_info
+      changed_when: false
+      failed_when: cluster_info.rc != 0
+
+    - name: Create namespace
+      kubernetes.core.k8s:
+        kubeconfig: "{{ kubeconfig_path }}"
+        state: present
+        definition:
+          apiVersion: v1
+          kind: Namespace
+          metadata:
+            name: "{{ k8s_namespace }}"
+
+    - name: Deploy database
+      kubernetes.core.k8s:
+        kubeconfig: "{{ kubeconfig_path }}"
+        state: present
+        namespace: "{{ k8s_namespace }}"
+        src: "{{ k8s_manifests_dir }}/db-gcp.yaml"
+
+    - name: Wait for database to be ready
+      kubernetes.core.k8s_info:
+        kubeconfig: "{{ kubeconfig_path }}"
+        kind: Pod
+        namespace: "{{ k8s_namespace }}"
+        label_selectors:
+          - app=todo-db
+      register: db_pods
+      until: db_pods.resources | selectattr('status.phase', 'equalto', 'Running') | list | length > 0
+      retries: "{{ pod_ready_retries }}"
+      delay: "{{ pod_ready_delay }}"
+
+    - name: Deploy backend
+      kubernetes.core.k8s:
+        kubeconfig: "{{ kubeconfig_path }}"
+        state: present
+        namespace: "{{ k8s_namespace }}"
+        src: "{{ k8s_manifests_dir }}/backend-gcp.yaml"
+
+    - name: Wait for backend to be ready
+      kubernetes.core.k8s_info:
+        kubeconfig: "{{ kubeconfig_path }}"
+        kind: Pod
+        namespace: "{{ k8s_namespace }}"
+        label_selectors:
+          - app=todo-backend
+      register: backend_pods
+      until: backend_pods.resources | selectattr('status.phase', 'equalto', 'Running') | list | length > 0
+      retries: "{{ pod_ready_retries }}"
+      delay: "{{ pod_ready_delay }}"
+
+    - name: Deploy frontend
+      kubernetes.core.k8s:
+        kubeconfig: "{{ kubeconfig_path }}"
+        state: present
+        namespace: "{{ k8s_namespace }}"
+        src: "{{ k8s_manifests_dir }}/frontend-gcp.yaml"
+
+    - name: Wait for frontend to be ready
+      kubernetes.core.k8s_info:
+        kubeconfig: "{{ kubeconfig_path }}"
+        kind: Pod
+        namespace: "{{ k8s_namespace }}"
+        label_selectors:
+          - app=todo-frontend
+      register: frontend_pods
+      until: frontend_pods.resources | selectattr('status.phase', 'equalto', 'Running') | list | length > 0
+      retries: "{{ pod_ready_retries }}"
+      delay: "{{ pod_ready_delay }}"
+
+    - name: Deploy Ingress
+      kubernetes.core.k8s:
+        kubeconfig: "{{ kubeconfig_path }}"
+        state: present
+        namespace: "{{ k8s_namespace }}"
+        src: "{{ k8s_manifests_dir }}/ingress-gcp.yaml"
+
+    - name: Get all pods
+      kubernetes.core.k8s_info:
+        kubeconfig: "{{ kubeconfig_path }}"
+        kind: Pod
+        namespace: "{{ k8s_namespace }}"
+      register: all_pods
+
+    - name: Display pods status
+      debug:
+        msg: "{{ item.metadata.name }}: {{ item.status.phase }}"
+      loop: "{{ all_pods.resources }}"
+
+    - name: Get Ingress information
+      kubernetes.core.k8s_info:
+        kubeconfig: "{{ kubeconfig_path }}"
+        kind: Ingress
+        namespace: "{{ k8s_namespace }}"
+        name: todo-app-ingress
+      register: ingress_info
+
+    - name: Display Ingress IP
+      debug:
+        msg:
+          - "✓ Deployment completed successfully!"
+          - ""
+          - "Ingress IP: {{ ingress_info.resources[0].status.loadBalancer.ingress[0].ip | default('Pending... (wait 5-10 minutes)') }}"
+          - ""
+          - "Access your application at:"
+          - "  http://{{ ingress_info.resources[0].status.loadBalancer.ingress[0].ip | default('PENDING') }}"
+          - ""
+          - "Useful commands:"
+          - "  kubectl get all -n {{ k8s_namespace }}"
+          - "  kubectl logs -l app=todo-backend -n {{ k8s_namespace }}"
+          - "  kubectl logs -l app=todo-frontend -n {{ k8s_namespace }}"

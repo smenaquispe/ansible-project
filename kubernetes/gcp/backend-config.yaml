@@ -1,0 +1,32 @@
+---
+# BackendConfig para el backend
+apiVersion: cloud.google.com/v1
+kind: BackendConfig
+metadata:
+  name: backend-config
+  namespace: todo-app
+spec:
+  healthCheck:
+    checkIntervalSec: 10
+    port: 5000
+    type: HTTP
+    requestPath: /api/health
+  timeoutSec: 30
+  connectionDraining:
+    drainingTimeoutSec: 60
+---
+# BackendConfig para el frontend
+apiVersion: cloud.google.com/v1
+kind: BackendConfig
+metadata:
+  name: frontend-config
+  namespace: todo-app
+spec:
+  healthCheck:
+    checkIntervalSec: 10
+    port: 80
+    type: HTTP
+    requestPath: /
+  timeoutSec: 30
+  connectionDraining:
+    drainingTimeoutSec: 60

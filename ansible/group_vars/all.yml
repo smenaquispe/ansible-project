@@ -1,0 +1,80 @@
+---
+# Variables globales para todos los playbooks
+# Estas variables se aplican a todos los hosts
+
+# ============================================================================
+# DOCKER HUB CONFIGURATION
+# ============================================================================
+docker_user: smenaq
+docker_registry: docker.io
+default_image_version: latest
+
+# Nombres de las imágenes
+backend_image: "{{ docker_registry }}/{{ docker_user }}/todo-backend"
+frontend_image: "{{ docker_registry }}/{{ docker_user }}/todo-frontend"
+db_image: "{{ docker_registry }}/{{ docker_user }}/todo-db"
+
+# ============================================================================
+# GOOGLE CLOUD PLATFORM (GCP)
+# ============================================================================
+gcp_project_id: "" # Se obtiene de gcloud config o se puede override
+gcp_zone: us-central1-a
+gcp_region: us-central1
+
+# ============================================================================
+# KUBERNETES CLUSTER (GKE)
+# ============================================================================
+cluster_name: todo-app-cluster
+machine_type: e2-small
+num_nodes: 2
+
+# Autoscaling
+min_nodes: 2
+max_nodes: 5
+
+# Disco
+disk_size: 20 # GB
+disk_type: pd-standard # pd-standard (HDD) o pd-ssd (SSD)
+
+# Optimizaciones (deshabilitadas para reducir costos)
+enable_cloud_logging: false
+enable_cloud_monitoring: false
+
+# Addons
+cluster_addons:
+  - HorizontalPodAutoscaling
+  - HttpLoadBalancing
+
+# ============================================================================
+# KUBERNETES NAMESPACE & MANIFESTS
+# ============================================================================
+k8s_namespace: todo-app
+k8s_manifests_dir_base: "{{ playbook_dir }}/../../kubernetes/base"
+k8s_manifests_dir_gcp: "{{ playbook_dir }}/../../kubernetes/gcp"
+
+# ============================================================================
+# DEPLOYMENT CONFIGURATION
+# ============================================================================
+# Timeout para esperar que los pods estén listos (segundos)
+pod_ready_timeout: 300
+pod_ready_retries: 30
+pod_ready_delay: 10DEPLO
+
+# Réplicas por servicio
+# backend_replicas: 4
+# frontend_replicas: 4
+# db_replicas: 1
+
+# ============================================================================
+# KUBECONFIG
+# ============================================================================
+kubeconfig_path: "~/.kube/config"
+
+# ============================================================================
+# COST INFORMATION (Solo informativo - no afecta el despliegue)
+# ============================================================================
+estimated_costs:
+  gke_management: "$74/mes"
+  load_balancer: "$18/mes"
+  total: "$92/mes"
+  free_tier: "$300 créditos por 90 días"
