@@ -21,6 +21,7 @@ Proyecto completo de despliegue automatizado de una aplicación Todo List usando
 
 - **Arquitectura de Microservicios**: Frontend (React+Vite), Backend (Node.js+Express), Base de Datos (PostgreSQL)
 - **Despliegue Automatizado**: Ansible playbooks para despliegue en Kubernetes
+- **CI/CD con Jenkins**: Pipeline automático para builds, tests y despliegues
 - **Multi-entorno**: Soporte para Kind (local) y Google Cloud Platform (GCP)
 - **Monitoreo**: Integración con Prometheus y Grafana
 - **Gestión con uv**: Todo el proyecto usa uv para máxima velocidad y reproducibilidad
@@ -128,7 +129,10 @@ ansible-project/
 │       └── db/                  # PostgreSQL
 ├── ansible/                     # Ansible automation
 │   ├── playbooks/               # Playbooks de Ansible
-│   │   └── deploy.yml           # Playbook principal de deploy
+│   │   ├── deploy-gcp.yml       # Deploy a GKE
+│   │   ├── create-cluster.yml   # Crear cluster
+│   │   ├── update-cluster.yml   # Actualizar infraestructura
+│   │   └── build-images.yml     # Construir imágenes Docker
 │   └── roles/                   # Roles de Ansible
 │       └── deploy-app/
 │           ├── tasks/
@@ -146,6 +150,12 @@ ansible-project/
 │       ├── db-gcp.yaml
 │       ├── ingress-gcp.yaml
 │       └── namespace.yaml
+├── jenkins/                     # CI/CD con Jenkins 🆕
+│   ├── README.md                # Guía completa de Jenkins
+│   ├── QUICKSTART.md            # Inicio rápido
+│   ├── setup-jenkins.fish       # Script de instalación
+│   ├── setup-jenkins.sh         # Script de instalación (bash)
+│   └── jenkins-values.yaml      # Valores para Helm
 ├── scripts/                     # Scripts de gestión y deployment
 │   ├── push-images.fish         # Subir imágenes a Docker Hub
 │   ├── create-cluster.fish      # Crear cluster GKE
@@ -154,6 +164,7 @@ ansible-project/
 │   └── README.md                # Documentación de scripts
 ├── docs/                        # Documentación
 ├── tests/                       # Tests unitarios
+├── Jenkinsfile                  # Pipeline de CI/CD 🆕
 ├── pyproject.toml              # Configuración del proyecto
 └── README.md
 ```
@@ -248,14 +259,44 @@ kubectl scale deployment todo-backend --replicas=3 -n todo-app
 3. Actualiza el deployment: `./scripts/deploy.fish --update`
    uv run pre-commit run --all-files
 
-```
+````
 
-## 📚 Documentación Adicional
+## � CI/CD con Jenkins
 
-- [TODO-APP.md](docs/TODO-APP.md) - Descripción detallada de la aplicación
-- [QUICK-START.md](docs/QUICK-START.md) - Guía de inicio rápido para GCP
-- [GUIA-REDESPLIEGUE.md](docs/GUIA-REDESPLIEGUE.md) - Guía de redespliegue
-- [ESTRUCTURA.md](docs/ESTRUCTURA.md) - Estructura de archivos detallada
+Este proyecto incluye configuración completa de CI/CD que automatiza todo el proceso de despliegue.
+
+### Inicio Rápido con Jenkins
+
+```bash
+cd jenkins
+./setup-jenkins.fish docker  # Instala Jenkins con Docker
+````
+
+### Características del Pipeline
+
+- ✅ **Detección automática de cambios** en código, infraestructura y configuración
+- ✅ **Tests automáticos** con cobertura de código
+- ✅ **Build y push de imágenes Docker** a Google Container Registry
+- ✅ **Despliegue automático** a GKE usando Ansible
+- ✅ **Verificación de salud** post-despliegue
+- ✅ **Webhooks** para GitHub/GitLab
+
+### Configuración
+
+Ver la [guía completa de Jenkins](jenkins/README.md) para:
+
+- Instalación en Docker o Kubernetes
+- Configuración de credenciales
+- Setup de webhooks
+- Troubleshooting
+
+## �📚 Documentación Adicional
+
+- **CI/CD**: [jenkins/README.md](jenkins/README.md) - Guía completa de CI/CD con Jenkins 🆕
+- **Aplicación**: [TODO-APP.md](docs/TODO-APP.md) - Descripción detallada de la aplicación
+- **Inicio Rápido**: [QUICK-START.md](docs/QUICK-START.md) - Guía de inicio rápido para GCP
+- **Redespliegue**: [GUIA-REDESPLIEGUE.md](docs/GUIA-REDESPLIEGUE.md) - Guía de redespliegue
+- **Estructura**: [ESTRUCTURA.md](docs/ESTRUCTURA.md) - Estructura de archivos detallada
 
 ### Scripts de GCP
 
@@ -292,4 +333,7 @@ UNSA Cloud Team - Universidad Nacional de San Agustín
 ---
 
 **Nota**: Este proyecto utiliza `uv` para gestión de dependencias. Para más información sobre uv, visita [https://github.com/astral-sh/uv](https://github.com/astral-sh/uv)
+
+```
+
 ```

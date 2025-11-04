@@ -12,7 +12,6 @@ set NORMAL (set_color normal)
 echo "$RED========================================================$NORMAL"
 echo "$RED        ELIMINAR CLUSTER GKE - EVITAR COSTOS         $NORMAL"
 echo "$RED========================================================$NORMAL"
-echo ""
 
 # Obtener configuración actual
 set PROJECT_ID (gcloud config get-value project 2>/dev/null)

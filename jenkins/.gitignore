@@ -1,0 +1,6 @@
+# Jenkins CI/CD Configuration
+
+# Agregar al .gitignore si no existe
+jenkins/jenkins-config.env
+jenkins-sa-key.json
+*.log

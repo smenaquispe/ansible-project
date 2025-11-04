@@ -1,0 +1,151 @@
+# Valores personalizados para Jenkins Helm Chart
+# Uso: helm install jenkins jenkins/jenkins -f jenkins-values.yaml
+
+controller:
+  # Imagen de Jenkins
+  image: "jenkins/jenkins"
+  tag: "lts"
+
+  # Recursos
+  resources:
+    requests:
+      cpu: "500m"
+      memory: "1Gi"
+    limits:
+      cpu: "2000m"
+      memory: "4Gi"
+
+  # Java options
+  javaOpts: "-Xmx2g -Xms1g"
+
+  # Service Account
+  serviceAccount:
+    create: true
+    name: jenkins
+
+  # Ingress
+  ingress:
+    enabled: true
+    apiVersion: "networking.k8s.io/v1"
+    annotations:
+      kubernetes.io/ingress.class: "nginx"
+      cert-manager.io/cluster-issuer: "letsencrypt-prod"
+    hostName: jenkins.tudominio.com
+    tls:
+      - secretName: jenkins-tls
+        hosts:
+          - jenkins.tudominio.com
+
+  # Configuración de seguridad
+  adminUser: "admin"
+  # IMPORTANTE: Cambiar esto en producción
+  adminPassword: "changeme123"
+
+  # Plugins a instalar
+  installPlugins:
+    - kubernetes:latest
+    - workflow-aggregator:latest
+    - git:latest
+    - github:latest
+    - configuration-as-code:latest
+    - google-kubernetes-engine:latest
+    - docker-workflow:latest
+    - docker-plugin:latest
+    - credentials-binding:latest
+    - pipeline-stage-view:latest
+    - blueocean:latest
+    - html-publisher:latest
+
+  # Jenkins Configuration as Code
+  JCasC:
+    defaultConfig: true
+    configScripts:
+      welcome-message: |
+        jenkins:
+          systemMessage: "Jenkins para CI/CD de Todo-App 🚀"
+
+      cloud-config: |
+        jenkins:
+          clouds:
+            - kubernetes:
+                name: "kubernetes"
+                serverUrl: "https://kubernetes.default"
+                namespace: "jenkins"
+                jenkinsUrl: "http://jenkins:8080"
+                jenkinsTunnel: "jenkins-agent:50000"
+                containerCapStr: "10"
+                maxRequestsPerHostStr: "32"
+                retentionTimeout: 5
+                connectTimeout: 10
+                readTimeout: 20
+                templates:
+                  - name: "default"
+                    namespace: "jenkins"
+                    label: "jenkins-agent"
+                    nodeUsageMode: NORMAL
+                    containers:
+                      - name: "jnlp"
+                        image: "jenkins/inbound-agent:latest"
+                        alwaysPullImage: false
+                        workingDir: "/home/jenkins/agent"
+                        command: ""
+                        args: ""
+                        ttyEnabled: true
+                        resourceRequestCpu: "500m"
+                        resourceRequestMemory: "512Mi"
+                        resourceLimitCpu: "1000m"
+                        resourceLimitMemory: "1Gi"
+
+      credentials: |
+        credentials:
+          system:
+            domainCredentials:
+              - credentials:
+                  - string:
+                      scope: GLOBAL
+                      id: "gcp-project-id"
+                      description: "GCP Project ID"
+                      secret: "${GCP_PROJECT_ID}"
+
+  # Sidecars (contenedores adicionales)
+  sidecars:
+    configAutoReload:
+      enabled: true
+      image: kiwigrid/k8s-sidecar:latest
+      env:
+        - name: LABEL
+          value: "jenkins_config"
+        - name: FOLDER
+          value: "/var/jenkins_home/casc_configs"
+        - name: NAMESPACE
+          value: "jenkins"
+
+# Persistence
+persistence:
+  enabled: true
+  size: 20Gi
+  storageClass: "standard"
+  accessMode: ReadWriteOnce
+
+# Agent configuration
+agent:
+  enabled: true
+  image: "jenkins/inbound-agent"
+  tag: "latest"
+  resources:
+    requests:
+      cpu: "200m"
+      memory: "256Mi"
+    limits:
+      cpu: "1000m"
+      memory: "1Gi"
+
+# Backup (opcional)
+backup:
+  enabled: false
+  schedule: "0 2 * * *"
+
+# RBAC
+rbac:
+  create: true
+  readSecrets: true

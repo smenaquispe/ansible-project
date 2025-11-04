@@ -1,0 +1,161 @@
+# Ejemplo de workflow GitHub Actions (alternativa a Jenkins)
+# Ubicar en: .github/workflows/ci-cd.yml
+
+name: CI/CD Pipeline
+
+on:
+  push:
+    branches: [master, main, develop]
+  pull_request:
+    branches: [master, main]
+
+env:
+  GCP_PROJECT_ID: ${{ secrets.GCP_PROJECT_ID }}
+  GKE_CLUSTER: todo-app-cluster
+  GKE_REGION: us-central1
+  DOCKER_REGISTRY: gcr.io/${{ secrets.GCP_PROJECT_ID }}
+
+jobs:
+  detect-changes:
+    name: Detect Changes
+    runs-on: ubuntu-latest
+    outputs:
+      code: ${{ steps.filter.outputs.code }}
+      infra: ${{ steps.filter.outputs.infra }}
+      config: ${{ steps.filter.outputs.config }}
+    steps:
+      - uses: actions/checkout@v3
+      - uses: dorny/paths-filter@v2
+        id: filter
+        with:
+          filters: |
+            code:
+              - 'src/**'
+            infra:
+              - 'ansible/**'
+              - 'kubernetes/**'
+            config:
+              - 'config.env'
+              - 'ansible/group_vars/**'
+
+  test:
+    name: Run Tests
+    runs-on: ubuntu-latest
+    needs: detect-changes
+    if: needs.detect-changes.outputs.code == 'true'
+    steps:
+      - uses: actions/checkout@v3
+
+      - name: Setup Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: "3.11"
+
+      - name: Install uv
+        run: curl -LsSf https://astral.sh/uv/install.sh | sh
+
+      - name: Install dependencies
+        run: uv sync
+
+      - name: Run tests
+        run: uv run pytest tests/ -v --cov=scripts --cov-report=html
+
+      - name: Upload coverage
+        uses: actions/upload-artifact@v3
+        with:
+          name: coverage-report
+          path: htmlcov/
+
+  build-and-push:
+    name: Build and Push Images
+    runs-on: ubuntu-latest
+    needs: [detect-changes, test]
+    if: |
+      always() && 
+      needs.detect-changes.outputs.code == 'true' &&
+      (needs.test.result == 'success' || needs.test.result == 'skipped')
+    strategy:
+      matrix:
+        component: [frontend, backend, db]
+    steps:
+      - uses: actions/checkout@v3
+
+      - name: Setup Cloud SDK
+        uses: google-github-actions/setup-gcloud@v1
+        with:
+          service_account_key: ${{ secrets.GCP_SA_KEY }}
+          project_id: ${{ secrets.GCP_PROJECT_ID }}
+
+      - name: Configure Docker
+        run: gcloud auth configure-docker
+
+      - name: Build and Push ${{ matrix.component }}
+        run: |
+          cd src/app/${{ matrix.component }}
+          docker build -t ${{ env.DOCKER_REGISTRY }}/todo-${{ matrix.component }}:${{ github.sha }} .
+          docker tag ${{ env.DOCKER_REGISTRY }}/todo-${{ matrix.component }}:${{ github.sha }} \
+                     ${{ env.DOCKER_REGISTRY }}/todo-${{ matrix.component }}:latest
+          docker push ${{ env.DOCKER_REGISTRY }}/todo-${{ matrix.component }}:${{ github.sha }}
+          docker push ${{ env.DOCKER_REGISTRY }}/todo-${{ matrix.component }}:latest
+
+  deploy:
+    name: Deploy to GKE
+    runs-on: ubuntu-latest
+    needs: [detect-changes, build-and-push]
+    if: |
+      always() &&
+      (needs.detect-changes.outputs.code == 'true' || 
+       needs.detect-changes.outputs.infra == 'true' ||
+       needs.detect-changes.outputs.config == 'true') &&
+      (needs.build-and-push.result == 'success' || needs.build-and-push.result == 'skipped')
+    steps:
+      - uses: actions/checkout@v3
+
+      - name: Setup Cloud SDK
+        uses: google-github-actions/setup-gcloud@v1
+        with:
+          service_account_key: ${{ secrets.GCP_SA_KEY }}
+          project_id: ${{ secrets.GCP_PROJECT_ID }}
+
+      - name: Get GKE credentials
+        run: |
+          gcloud container clusters get-credentials ${{ env.GKE_CLUSTER }} \
+            --region=${{ env.GKE_REGION }}
+
+      - name: Install Ansible
+        run: |
+          pip install ansible kubernetes
+          ansible-galaxy collection install kubernetes.core
+
+      - name: Deploy with Ansible
+        run: |
+          cd ansible
+          ansible-playbook -i inventory/hosts playbooks/deploy-gcp.yml \
+            -e "image_tag=${{ github.sha }}"
+
+      - name: Verify Deployment
+        run: |
+          kubectl rollout status deployment/todo-frontend -n todo-app --timeout=5m
+          kubectl rollout status deployment/todo-backend -n todo-app --timeout=5m
+          kubectl rollout status statefulset/todo-db -n todo-app --timeout=5m
+
+          echo "=== Deployment Status ==="
+          kubectl get pods -n todo-app
+          kubectl get ingress -n todo-app
+
+  notify:
+    name: Notify
+    runs-on: ubuntu-latest
+    needs: [test, build-and-push, deploy]
+    if: always()
+    steps:
+      - name: Send Slack notification
+        if: ${{ secrets.SLACK_WEBHOOK }}
+        uses: 8398a7/action-slack@v3
+        with:
+          status: ${{ job.status }}
+          webhook_url: ${{ secrets.SLACK_WEBHOOK }}
+          text: |
+            Deployment ${{ job.status }}!
+            Commit: ${{ github.sha }}
+            Author: ${{ github.actor }}

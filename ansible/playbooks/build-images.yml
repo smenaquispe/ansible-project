@@ -1,0 +1,137 @@
+---
+# Ejemplo de playbook para construir y publicar imágenes Docker
+# Este playbook puede ser usado por Jenkins o ejecutado manualmente
+# Uso: ansible-playbook -i inventory/hosts playbooks/build-images.yml -e "image_tag=v1.0.0"
+
+- name: Build and Push Docker Images
+  hosts: localhost
+  gather_facts: true
+  vars:
+    project_root: "{{ playbook_dir }}/../.."
+    gcp_project_id: "{{ lookup('env', 'GCP_PROJECT_ID') }}"
+    docker_registry: "gcr.io/{{ gcp_project_id }}"
+    image_tag: "{{ lookup('env', 'BUILD_TAG') | default('latest', true) }}"
+
+  tasks:
+    - name: Display build configuration
+      ansible.builtin.debug:
+        msg:
+          - "Project root: {{ project_root }}"
+          - "Registry: {{ docker_registry }}"
+          - "Image tag: {{ image_tag }}"
+          - "GCP Project: {{ gcp_project_id }}"
+
+    - name: Verify Docker is running
+      ansible.builtin.command: docker info
+      register: docker_info
+      changed_when: false
+      failed_when: docker_info.rc != 0
+
+    - name: Build Frontend image
+      community.docker.docker_image:
+        name: "{{ docker_registry }}/todo-frontend"
+        tag: "{{ image_tag }}"
+        source: build
+        build:
+          path: "{{ project_root }}/src/app/frontend"
+          dockerfile: Dockerfile
+        push: false
+      register: frontend_build
+
+    - name: Tag Frontend image as latest
+      community.docker.docker_image:
+        name: "{{ docker_registry }}/todo-frontend"
+        repository: "{{ docker_registry }}/todo-frontend:latest"
+        source: local
+        force_tag: true
+
+    - name: Build Backend image
+      community.docker.docker_image:
+        name: "{{ docker_registry }}/todo-backend"
+        tag: "{{ image_tag }}"
+        source: build
+        build:
+          path: "{{ project_root }}/src/app/backend"
+          dockerfile: Dockerfile
+        push: false
+      register: backend_build
+
+    - name: Tag Backend image as latest
+      community.docker.docker_image:
+        name: "{{ docker_registry }}/todo-backend"
+        repository: "{{ docker_registry }}/todo-backend:latest"
+        source: local
+        force_tag: true
+
+    - name: Build Database image
+      community.docker.docker_image:
+        name: "{{ docker_registry }}/todo-db"
+        tag: "{{ image_tag }}"
+        source: build
+        build:
+          path: "{{ project_root }}/src/app/db"
+          dockerfile: Dockerfile
+        push: false
+      register: db_build
+
+    - name: Tag Database image as latest
+      community.docker.docker_image:
+        name: "{{ docker_registry }}/todo-db"
+        repository: "{{ docker_registry }}/todo-db:latest"
+        source: local
+        force_tag: true
+
+    - name: Configure Docker for GCR
+      ansible.builtin.shell: gcloud auth configure-docker
+      changed_when: false
+      when: gcp_project_id is defined and gcp_project_id != ""
+
+    - name: Push Frontend image
+      community.docker.docker_image:
+        name: "{{ docker_registry }}/todo-frontend"
+        tag: "{{ image_tag }}"
+        push: true
+        source: local
+
+    - name: Push Frontend latest
+      community.docker.docker_image:
+        name: "{{ docker_registry }}/todo-frontend"
+        tag: latest
+        push: true
+        source: local
+
+    - name: Push Backend image
+      community.docker.docker_image:
+        name: "{{ docker_registry }}/todo-backend"
+        tag: "{{ image_tag }}"
+        push: true
+        source: local
+
+    - name: Push Backend latest
+      community.docker.docker_image:
+        name: "{{ docker_registry }}/todo-backend"
+        tag: latest
+        push: true
+        source: local
+
+    - name: Push Database image
+      community.docker.docker_image:
+        name: "{{ docker_registry }}/todo-db"
+        tag: "{{ image_tag }}"
+        push: true
+        source: local
+
+    - name: Push Database latest
+      community.docker.docker_image:
+        name: "{{ docker_registry }}/todo-db"
+        tag: latest
+        push: true
+        source: local
+
+    - name: Display push results
+      ansible.builtin.debug:
+        msg:
+          - "✅ Images pushed successfully:"
+          - "  - {{ docker_registry }}/todo-frontend:{{ image_tag }}"
+          - "  - {{ docker_registry }}/todo-backend:{{ image_tag }}"
+          - "  - {{ docker_registry }}/todo-db:{{ image_tag }}"

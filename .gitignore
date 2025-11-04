@@ -90,3 +90,7 @@ yarn-error.log*
 .gcp/
 gcp-key.json
 *-key.json
+
+# Jenkins
+jenkins/jenkins-config.env
+jenkins-sa-key.json
