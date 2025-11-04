@@ -1,5 +1,5 @@
 FROM postgres:14-alpine
-b
+
 ENV POSTGRES_USER=admin
 ENV POSTGRES_PASSWORD=admin
 ENV POSTGRES_DB=todos
