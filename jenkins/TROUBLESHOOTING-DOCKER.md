@@ -91,6 +91,17 @@ Después de aplicar estos cambios, el pipeline debe ejecutarse sin problemas. Pu
    - ✅ Pipeline completado exitosamente!
    - 🗑️ Imágenes Docker limpiadas
 
-## 📝 Nota
+## 📝 Notas Importantes
 
-Este error es común cuando se instala Jenkins manualmente en vez de usar el script de instalación proporcionado que ya incluye Docker.
+1. **Este error es común cuando se instala Jenkins manualmente** en vez de usar el script de instalación proporcionado que ya incluye Docker.
+
+2. **Los permisos del socket Docker pueden perderse** después de reiniciar el host o Jenkins. Si vuelve a aparecer el error `permission denied`, ejecuta:
+   ```bash
+   docker exec -u root jenkins chmod 666 /var/run/docker.sock
+   ```
+
+3. **Alternativa más segura**: En lugar de `chmod 666`, puedes usar grupos:
+   ```bash
+   docker exec -u root jenkins usermod -aG docker jenkins
+   docker restart jenkins
+   ```
