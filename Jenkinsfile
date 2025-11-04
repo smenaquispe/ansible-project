@@ -280,29 +280,43 @@ pipeline {
                 withCredentials([file(credentialsId: 'gcp-service-account-key', variable: 'GCP_KEY_FILE')]) {
                     script {
                         def clusterExists = sh(
-                            script: """
-                                gcloud auth activate-service-account --key-file=${GCP_KEY_FILE}
-                                gcloud config set project ${PROJECT_ID}
-                                gcloud container clusters describe ${GKE_CLUSTER} --region=${GCP_REGION} 2>/dev/null
-                            """,
+                            script: '''
+                                gcloud auth activate-service-account --key-file="$GCP_KEY_FILE"
+                                gcloud config set project "$PROJECT_ID"
+                                gcloud container clusters describe "$GKE_CLUSTER" --region="$GCP_REGION" 2>/dev/null
+                            ''',
                             returnStatus: true
                         )
                         
                         if (clusterExists != 0) {
-                            echo '🆕 Cluster no existe, creando...'
+                            echo '🆕 Cluster no existe, creando con gcloud...'
                             sh '''
-                                cd ansible
-                                ansible-playbook -i inventory/hosts playbooks/create-cluster.yml \
-                                    -e "gcp_service_account_file=${GCP_KEY_FILE}"
+                                gcloud auth activate-service-account --key-file="$GCP_KEY_FILE"
+                                gcloud config set project "$PROJECT_ID"
+                                
+                                # Crear cluster usando gcloud directamente
+                                gcloud container clusters create "$GKE_CLUSTER" \
+                                    --region "$GCP_REGION" \
+                                    --num-nodes 3 \
+                                    --machine-type e2-medium \
+                                    --disk-size 20 \
+                                    --enable-autoscaling \
+                                    --min-nodes 1 \
+                                    --max-nodes 5 \
+                                    --enable-autorepair \
+                                    --enable-autoupgrade
                             '''
                         } else {
                             echo '✅ Cluster ya existe'
-                            // Obtener credenciales del cluster
-                            sh """
-                                gcloud container clusters get-credentials ${GKE_CLUSTER} \
-                                    --region=${GCP_REGION} --project=${PROJECT_ID}
-                            """
                         }
+                        
+                        // Siempre obtener credenciales del cluster al final
+                        echo '🔐 Obteniendo credenciales del cluster...'
+                        sh '''
+                            gcloud container clusters get-credentials "$GKE_CLUSTER" \
+                                --region "$GCP_REGION" \
+                                --project "$PROJECT_ID"
+                        '''
                     }
                 }
             }
@@ -315,15 +329,26 @@ pipeline {
                 }
             }
             steps {
-                echo '🔧 Actualizando infraestructura...'
-                withCredentials([file(credentialsId: 'gcp-service-account-key', variable: 'GCP_KEY_FILE')]) {
-                    sh '''
-                        cd ansible
-                        ansible-playbook -i inventory/hosts playbooks/update-cluster.yml \
-                            -e "gcp_service_account_file=${GCP_KEY_FILE}" \
-                            -e "image_tag=${BUILD_TAG}"
-                    '''
-                }
+                echo '🔧 Actualizando infraestructura Kubernetes...'
+                sh '''
+                    # Aplicar cambios en la infraestructura
+                    echo "Aplicando cambios de infraestructura..."
+                    kubectl apply -f kubernetes/gcp/namespace.yaml
+                    
+                    # Si hay cambios en los manifests, aplicarlos
+                    if [ -f "kubernetes/gcp/backend-gcp.yaml" ]; then
+                        kubectl apply -f kubernetes/gcp/backend-gcp.yaml
+                    fi
+                    if [ -f "kubernetes/gcp/frontend-gcp.yaml" ]; then
+                        kubectl apply -f kubernetes/gcp/frontend-gcp.yaml
+                    fi
+                    if [ -f "kubernetes/gcp/db-gcp.yaml" ]; then
+                        kubectl apply -f kubernetes/gcp/db-gcp.yaml
+                    fi
+                    if [ -f "kubernetes/gcp/ingress-gcp.yaml" ]; then
+                        kubectl apply -f kubernetes/gcp/ingress-gcp.yaml
+                    fi
+                '''
             }
         }
         
@@ -335,14 +360,26 @@ pipeline {
             }
             steps {
                 echo '🚀 Desplegando aplicación...'
-                withCredentials([file(credentialsId: 'gcp-service-account-key', variable: 'GCP_KEY_FILE')]) {
-                    sh '''
-                        cd ansible
-                        ansible-playbook -i inventory/hosts playbooks/deploy-gcp.yml \
-                            -e "gcp_service_account_file=${GCP_KEY_FILE}" \
-                            -e "image_tag=${BUILD_TAG}"
-                    '''
-                }
+                sh '''
+                    # Crear namespace si no existe
+                    kubectl apply -f kubernetes/gcp/namespace.yaml
+                    
+                    # Actualizar las imágenes de los deployments
+                    echo "Actualizando imágenes Docker..."
+                    kubectl set image deployment/todo-frontend \
+                        todo-frontend="$FRONTEND_IMAGE:$BUILD_TAG" \
+                        -n todo-app
+                    
+                    kubectl set image deployment/todo-backend \
+                        todo-backend="$BACKEND_IMAGE:$BUILD_TAG" \
+                        -n todo-app
+                    
+                    kubectl set image statefulset/todo-db \
+                        todo-db="$DB_IMAGE:$BUILD_TAG" \
+                        -n todo-app
+                    
+                    echo "✅ Imágenes actualizadas correctamente"
+                '''
             }
         }
         
