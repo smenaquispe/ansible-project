@@ -358,19 +358,20 @@ pipeline {
                     fi
                     
                     # Actualizar las imágenes de los deployments existentes
+                    # Nota: Los nombres de los contenedores son: frontend, backend, db
                     echo "Actualizando imagen Frontend..."
                     kubectl set image deployment/todo-frontend \
-                        todo-frontend="$FRONTEND_IMAGE:$BUILD_TAG" \
+                        frontend="$FRONTEND_IMAGE:$BUILD_TAG" \
                         -n todo-app
                     
                     echo "Actualizando imagen Backend..."
                     kubectl set image deployment/todo-backend \
-                        todo-backend="$BACKEND_IMAGE:$BUILD_TAG" \
+                        backend="$BACKEND_IMAGE:$BUILD_TAG" \
                         -n todo-app
                     
                     echo "Actualizando imagen Database..."
                     kubectl set image deployment/todo-db \
-                        todo-db="$DB_IMAGE:$BUILD_TAG" \
+                        db="$DB_IMAGE:$BUILD_TAG" \
                         -n todo-app
                     
                     echo "✅ Imágenes actualizadas correctamente"
