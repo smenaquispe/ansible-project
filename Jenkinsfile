@@ -366,10 +366,15 @@ pipeline {
         success {
             echo '✅ Pipeline completado exitosamente!'
             script {
-                // Limpiar imágenes locales para ahorrar espacio
-                sh """
-                    docker image prune -f
-                """
+                // Limpiar imágenes locales para ahorrar espacio (si Docker está disponible)
+                try {
+                    sh """
+                        docker image prune -f
+                    """
+                    echo '🗑️ Imágenes Docker limpiadas'
+                } catch (Exception e) {
+                    echo '⚠️ No se pudo limpiar imágenes Docker (no crítico)'
+                }
             }
         }
         
