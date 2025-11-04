@@ -305,24 +305,36 @@ pipeline {
             }
             steps {
                 echo '🔧 Actualizando infraestructura Kubernetes...'
+                echo '⚠️  NOTA: Si necesitas recrear recursos, usa: ./scripts/deploy.fish'
                 sh '''
-                    # Aplicar cambios en la infraestructura
-                    echo "Aplicando cambios de infraestructura..."
-                    kubectl apply -f kubernetes/gcp/namespace.yaml
+                    # Solo aplicar cambios si hay modificaciones en los manifests
+                    echo "Verificando cambios en manifests..."
                     
-                    # Si hay cambios en los manifests, aplicarlos
+                    if [ -f "kubernetes/gcp/namespace.yaml" ]; then
+                        kubectl apply -f kubernetes/gcp/namespace.yaml
+                    fi
+                    
                     if [ -f "kubernetes/gcp/backend-gcp.yaml" ]; then
                         kubectl apply -f kubernetes/gcp/backend-gcp.yaml
                     fi
+                    
                     if [ -f "kubernetes/gcp/frontend-gcp.yaml" ]; then
                         kubectl apply -f kubernetes/gcp/frontend-gcp.yaml
                     fi
+                    
                     if [ -f "kubernetes/gcp/db-gcp.yaml" ]; then
                         kubectl apply -f kubernetes/gcp/db-gcp.yaml
                     fi
+                    
                     if [ -f "kubernetes/gcp/ingress-gcp.yaml" ]; then
                         kubectl apply -f kubernetes/gcp/ingress-gcp.yaml
                     fi
+                    
+                    if [ -f "kubernetes/gcp/backend-config.yaml" ]; then
+                        kubectl apply -f kubernetes/gcp/backend-config.yaml
+                    fi
+                    
+                    echo "✅ Manifests aplicados"
                 '''
             }
         }
@@ -330,26 +342,34 @@ pipeline {
         stage('Deploy Application') {
             when {
                 expression { 
-                    return env.CODE_CHANGED == 'true' || env.CONFIG_CHANGED == 'true'
+                    return env.CODE_CHANGED == 'true'
                 }
             }
             steps {
-                echo '🚀 Desplegando aplicación...'
+                echo '🚀 Actualizando imágenes de la aplicación...'
                 sh '''
-                    # Crear namespace si no existe
-                    kubectl apply -f kubernetes/gcp/namespace.yaml
+                    # Verificar que el namespace existe
+                    if ! kubectl get namespace todo-app > /dev/null 2>&1; then
+                        echo "❌ Error: El namespace 'todo-app' no existe"
+                        echo "Por favor crea primero el cluster e infraestructura con:"
+                        echo "  ./scripts/create-cluster.fish"
+                        echo "  ./scripts/deploy.fish"
+                        exit 1
+                    fi
                     
-                    # Actualizar las imágenes de los deployments
-                    echo "Actualizando imágenes Docker..."
+                    # Actualizar las imágenes de los deployments existentes
+                    echo "Actualizando imagen Frontend..."
                     kubectl set image deployment/todo-frontend \
                         todo-frontend="$FRONTEND_IMAGE:$BUILD_TAG" \
                         -n todo-app
                     
+                    echo "Actualizando imagen Backend..."
                     kubectl set image deployment/todo-backend \
                         todo-backend="$BACKEND_IMAGE:$BUILD_TAG" \
                         -n todo-app
                     
-                    kubectl set image statefulset/todo-db \
+                    echo "Actualizando imagen Database..."
+                    kubectl set image deployment/todo-db \
                         todo-db="$DB_IMAGE:$BUILD_TAG" \
                         -n todo-app
                     
@@ -367,17 +387,48 @@ pipeline {
             steps {
                 echo '✅ Verificando despliegue...'
                 sh '''
-                    # Verificar que todos los pods estén corriendo
-                    kubectl get pods -n todo-app
-                    kubectl rollout status deployment/todo-frontend -n todo-app --timeout=5m
-                    kubectl rollout status deployment/todo-backend -n todo-app --timeout=5m
-                    kubectl rollout status statefulset/todo-db -n todo-app --timeout=5m
+                    echo "Esperando que los deployments se actualicen..."
                     
-                    # Obtener información del servicio
+                    # Verificar rollout de Frontend
+                    echo "Verificando Frontend..."
+                    kubectl rollout status deployment/todo-frontend -n todo-app --timeout=5m
+                    
+                    # Verificar rollout de Backend
+                    echo "Verificando Backend..."
+                    kubectl rollout status deployment/todo-backend -n todo-app --timeout=5m
+                    
+                    # Verificar rollout de Database
+                    echo "Verificando Database..."
+                    kubectl rollout status deployment/todo-db -n todo-app --timeout=5m
+                    
+                    echo ""
                     echo "=========================================="
-                    echo "Información del Ingress:"
+                    echo "Estado de los Pods:"
+                    echo "=========================================="
+                    kubectl get pods -n todo-app
+                    
+                    echo ""
+                    echo "=========================================="
+                    echo "Servicios:"
+                    echo "=========================================="
+                    kubectl get svc -n todo-app
+                    
+                    echo ""
+                    echo "=========================================="
+                    echo "Ingress:"
+                    echo "=========================================="
                     kubectl get ingress -n todo-app
-                    echo "=========================================="
+                    
+                    # Obtener IP externa si está disponible
+                    EXTERNAL_IP=$(kubectl get ingress todo-app-ingress -n todo-app -o jsonpath='{.status.loadBalancer.ingress[0].ip}' 2>/dev/null || echo "")
+                    
+                    if [ -n "$EXTERNAL_IP" ]; then
+                        echo ""
+                        echo "=========================================="
+                        echo "✅ Aplicación disponible en:"
+                        echo "   http://$EXTERNAL_IP"
+                        echo "=========================================="
+                    fi
                 '''
             }
         }
