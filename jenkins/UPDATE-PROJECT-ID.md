@@ -3,6 +3,7 @@
 ## 🔧 Problema Actual
 
 El pipeline está usando un `PROJECT_ID` incorrecto. El proyecto correcto es:
+
 ```
 ansible-project-475919
 ```
@@ -36,11 +37,13 @@ docker exec jenkins cat /var/jenkins_home/credentials.xml
 Ya se habilitaron las APIs necesarias y se dieron los permisos correctos a la cuenta de servicio:
 
 ✅ **APIs Habilitadas:**
+
 - Cloud Resource Manager API
-- Container Registry API  
+- Container Registry API
 - Artifact Registry API
 
 ✅ **Permisos Asignados a `cicd-service@ansible-project-475919.iam.gserviceaccount.com`:**
+
 - `roles/storage.admin` - Para subir imágenes a GCR
 - `roles/artifactregistry.writer` - Para Artifact Registry
 
