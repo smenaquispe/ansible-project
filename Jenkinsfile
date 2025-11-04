@@ -249,8 +249,8 @@ pipeline {
                 withCredentials([file(credentialsId: 'gcp-service-account-key', variable: 'GCP_KEY_FILE')]) {
                     sh '''
                         # Autenticar con GCP
-                        gcloud auth activate-service-account --key-file=${GCP_KEY_FILE}
-                        gcloud config set project ${PROJECT_ID}
+                        gcloud auth activate-service-account --key-file="${GCP_KEY_FILE}"
+                        gcloud config set project "${PROJECT_ID}"
                         
                         # Configurar Docker para GCR
                         gcloud auth configure-docker
