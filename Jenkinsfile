@@ -41,6 +41,11 @@ pipeline {
         timeout(time: 30, unit: 'MINUTES')
     }
     
+    triggers {
+        // GitHub webhook trigger - Se activa automáticamente con cada push
+        githubPush()
+    }
+    
     stages {
         stage('Checkout') {
             steps {
