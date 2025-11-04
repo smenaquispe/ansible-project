@@ -1,0 +1,12 @@
+# Dependencias de Python requeridas para los módulos de Ansible
+# Instalación: pip install -r requirements.txt
+
+# Google Cloud SDK y autenticación
+google-auth>=2.0.0
+requests>=2.25.0
+
+# Cliente de Kubernetes
+kubernetes>=12.0.0
+
+# Ansible core (si no está instalado)
+ansible>=2.10.0

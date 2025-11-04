@@ -1,6 +1,9 @@
 ---
 # Playbook para actualizar cluster GKE existente
 # Uso: ansible-playbook -i inventory/hosts playbooks/update-cluster.yml
+#
+# Requisitos:
+#   - ansible-galaxy collection install google.cloud kubernetes.core
 
 - name: Update GKE Cluster
   hosts: gcp
@@ -10,126 +13,118 @@
     - ../group_vars/gcp.yml
 
   tasks:
-    - name: Get GCP project ID
-      set_fact:
-        actual_project_id: "{{ gcp_project_id if (gcp_project_id is defined and gcp_project_id | length > 0) else lookup('pipe', 'gcloud config get-value project 2>/dev/null') }}"
+    - name: Validate GCP project ID
+      ansible.builtin.fail:
+        msg: "gcp_project_id must be defined in group_vars/all.yml"
+      when: gcp_project_id is not defined or gcp_project_id | length == 0
 
     - name: Display update configuration
-      debug:
+      ansible.builtin.debug:
         msg:
-          - "Project ID:    {{ actual_project_id }}"
+          - "Project ID:    {{ gcp_project_id }}"
           - "Zone:          {{ gcp_zone }}"
           - "Cluster Name:  {{ cluster_name }}"
           - "Target Nodes:  {{ num_nodes }}"
           - "Autoscaling:   {{ min_nodes }}-{{ max_nodes }} nodes"
+          - "CPU Limits:    {{ resource_limits.cpu.min }}-{{ resource_limits.cpu.max }} vCPUs"
+          - "Memory Limits: {{ resource_limits.memory.min }}-{{ resource_limits.memory.max }} GB"
+          - "CPU Target:    {{ (cluster_autoscaler_settings.cpu_utilization_target * 100) | int }}%"
+          - "Memory Target: {{ (cluster_autoscaler_settings.memory_utilization_target * 100) | int }}%"
+          - "Profile:       {{ autoscaling_profile }}"
 
-    - name: Check if cluster exists
-      command: >
-        gcloud container clusters describe {{ cluster_name }}
-        --zone={{ gcp_zone }}
-        --project={{ actual_project_id }}
-      register: cluster_exists
-      failed_when: false
-      changed_when: false
+    - name: Get cluster information
+      google.cloud.gcp_container_cluster_info:
+        location: "{{ gcp_zone }}"
+        project: "{{ gcp_project_id }}"
+        auth_kind: application
+      register: cluster_list
+
+    - name: Find cluster
+      ansible.builtin.set_fact:
+        cluster_found: "{{ cluster_list.resources | selectattr('name', 'equalto', cluster_name) | list }}"
 
     - name: Fail if cluster doesn't exist
-      fail:
+      ansible.builtin.fail:
         msg: "Cluster '{{ cluster_name }}' does not exist. Use create-cluster.yml first."
-      when: cluster_exists.rc != 0
+      when: cluster_found | length == 0
 
-    - name: Get current node pool info
-      command: >
-        gcloud container node-pools describe default-pool
-        --cluster={{ cluster_name }}
-        --zone={{ gcp_zone }}
-        --project={{ actual_project_id }}
-        --format=json
-      register: nodepool_info
-      changed_when: false
-
-    - name: Parse node pool info
-      set_fact:
-        current_node_count: "{{ (nodepool_info.stdout | from_json).initialNodeCount }}"
-        current_min_nodes: "{{ (nodepool_info.stdout | from_json).autoscaling.minNodeCount | default(min_nodes) }}"
-        current_max_nodes: "{{ (nodepool_info.stdout | from_json).autoscaling.maxNodeCount | default(max_nodes) }}"
+    - name: Get current cluster configuration
+      ansible.builtin.set_fact:
+        current_cluster: "{{ cluster_found[0] }}"
+        current_node_count: "{{ cluster_found[0].initialNodeCount }}"
 
     - name: Display current vs target configuration
-      debug:
+      ansible.builtin.debug:
         msg:
           - "Current Nodes: {{ current_node_count }}"
           - "Target Nodes:  {{ num_nodes }}"
-          - "Current Min:   {{ current_min_nodes }}"
           - "Target Min:    {{ min_nodes }}"
-          - "Current Max:   {{ current_max_nodes }}"
           - "Target Max:    {{ max_nodes }}"
 
-    - name: Update autoscaling settings
-      command: >
-        gcloud container clusters update {{ cluster_name }}
-        --zone={{ gcp_zone }}
-        --project={{ actual_project_id }}
-        --enable-autoscaling
-        --min-nodes={{ min_nodes }}
-        --max-nodes={{ max_nodes }}
-        --node-pool=default-pool
-        --quiet
-      when: current_min_nodes|int != min_nodes|int or current_max_nodes|int != max_nodes|int
-      register: autoscaling_update
+    - name: Update GKE cluster base configuration
+      google.cloud.gcp_container_cluster:
+        name: "{{ cluster_name }}"
+        location: "{{ gcp_zone }}"
+        project: "{{ gcp_project_id }}"
+        auth_kind: application
+        initial_node_count: 1
+        logging_service: "{{ 'logging.googleapis.com/kubernetes' if enable_cloud_logging else 'none' }}"
+        monitoring_service: "{{ 'monitoring.googleapis.com/kubernetes' if enable_cloud_monitoring else 'none' }}"
+        addons_config:
+          http_load_balancing:
+            disabled: "{{ 'HttpLoadBalancing' not in cluster_addons }}"
+          horizontal_pod_autoscaling:
+            disabled: "{{ 'HorizontalPodAutoscaling' not in cluster_addons }}"
+        state: present
+      register: cluster_update
 
-    - name: Resize node pool
-      command: >
-        gcloud container clusters resize {{ cluster_name }}
-        --zone={{ gcp_zone }}
-        --project={{ actual_project_id }}
-        --node-pool=default-pool
-        --num-nodes={{ num_nodes }}
-        --quiet
-      when: current_node_count|int != num_nodes|int
-      register: resize_result
-
-    - name: Wait for cluster to be ready
-      command: >
-        gcloud container clusters describe {{ cluster_name }}
-        --zone={{ gcp_zone }}
-        --project={{ actual_project_id }}
-        --format="value(status)"
-      register: cluster_status
-      until: cluster_status.stdout == "RUNNING"
-      retries: 30
-      delay: 10
-      changed_when: false
+    - name: Update node pool configuration
+      google.cloud.gcp_container_node_pool:
+        name: default-pool
+        cluster: "{{ cluster_update }}"
+        location: "{{ gcp_zone }}"
+        project: "{{ gcp_project_id }}"
+        auth_kind: application
+        initial_node_count: "{{ num_nodes }}"
+        autoscaling:
+          enabled: true
+          min_node_count: "{{ min_nodes }}"
+          max_node_count: "{{ max_nodes }}"
+        config:
+          machine_type: "{{ machine_type }}"
+          disk_size_gb: "{{ disk_size }}"
+          disk_type: "{{ disk_type }}"
+          oauth_scopes:
+            - https://www.googleapis.com/auth/compute
+            - https://www.googleapis.com/auth/devstorage.read_only
+            - https://www.googleapis.com/auth/logging.write
+            - https://www.googleapis.com/auth/monitoring
+        state: present
+      register: node_pool_update
 
     - name: Get cluster credentials
-      command: >
-        gcloud container clusters get-credentials {{ cluster_name }}
-        --zone={{ gcp_zone }}
-        --project={{ actual_project_id }}
+      ansible.builtin.command:
+        cmd: gcloud container clusters get-credentials {{ cluster_name }} --zone={{ gcp_zone }} --project={{ gcp_project_id }}
       changed_when: true
 
-    - name: Verify cluster connection
-      command: kubectl cluster-info
-      register: cluster_info
-      changed_when: false
-
-    - name: Get updated cluster nodes
-      command: kubectl get nodes
+    - name: Get cluster nodes
+      kubernetes.core.k8s_info:
+        kind: Node
       register: nodes_info
-      changed_when: false
 
     - name: Display updated nodes
-      debug:
-        var: nodes_info.stdout_lines
+      ansible.builtin.debug:
+        msg: "Nodes: {{ nodes_info.resources | map(attribute='metadata.name') | list | join(', ') }}"
 
     - name: Display update summary
-      debug:
+      ansible.builtin.debug:
         msg:
           - "✓ Cluster update completed successfully!"
           - ""
           - "Updated configuration:"
-          - "  Nodes:      {{ num_nodes }}"
+          - "  Nodes:       {{ num_nodes }}"
           - "  Autoscaling: {{ min_nodes }}-{{ max_nodes }}"
-          - ""
-          - "⚠️  COST INFORMATION"
-          - "GKE Management: {{ estimated_costs.gke_management }}"
-          - "Load Balancer:  {{ estimated_costs.load_balancer }}"
-          - "Total:          {{ estimated_costs.total }}"
+          - "  CPU Limits:  {{ resource_limits.cpu.min }}-{{ resource_limits.cpu.max }} vCPUs"
+          - "  Memory Limits: {{ resource_limits.memory.min }}-{{ resource_limits.memory.max }} GB"
+          - "  CPU Target:  {{ (cluster_autoscaler_settings.cpu_utilization_target * 100) | int }}%"
+          - "  Profile:     {{ autoscaling_profile }}"

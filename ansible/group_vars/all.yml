@@ -17,7 +17,7 @@ db_image: "{{ docker_registry }}/{{ docker_user }}/todo-db"
 # ============================================================================
 # GOOGLE CLOUD PLATFORM (GCP)
 # ============================================================================
-gcp_project_id: "" # Se obtiene de gcloud config o se puede override
+gcp_project_id: "ansible-project-475919"
 gcp_zone: us-central1-a
 gcp_region: us-central1
 
@@ -28,9 +28,33 @@ cluster_name: todo-app-cluster
 machine_type: e2-small
 num_nodes: 2
 
-# Autoscaling
+# Autoscaling de Nodos
 min_nodes: 2
 max_nodes: 5
+
+# Límites de Recursos para Autoescalamiento
+# GKE escalará el cluster para mantener entre estos límites
+resource_limits:
+  cpu:
+    min: 4 # Mínimo de vCPUs en el cluster (e2-small tiene 2 vCPUs)
+    max: 10 # Máximo de vCPUs en el cluster
+  memory:
+    min: 4 # Mínimo de GB de memoria en el cluster (e2-small tiene 2 GB)
+    max: 10 # Máximo de GB de memoria en el cluster
+
+# Políticas de Autoescalamiento
+# GKE escala basado en la utilización de recursos de los pods
+autoscaling_profile: balanced # balanced, optimize-utilization
+cluster_autoscaler_settings:
+  # Escalar cuando el uso de CPU de los pods alcanza este porcentaje
+  cpu_utilization_target: 0.7 # 70% (valor entre 0.0 - 1.0)
+  # Escalar cuando el uso de memoria de los pods alcanza este porcentaje
+  memory_utilization_target: 0.8 # 80% (valor entre 0.0 - 1.0)
+  # Tiempo de espera antes de escalar (segundos)
+  scale_down_delay_after_add: 600 # 10 minutos
+  scale_down_unneeded_time: 600 # 10 minutos
+  # Control de escalado hacia abajo
+  scale_down_utilization_threshold: 0.5 # 50%
 
 # Disco
 disk_size: 20 # GB
@@ -58,7 +82,7 @@ k8s_manifests_dir_gcp: "{{ playbook_dir }}/../../kubernetes/gcp"
 # Timeout para esperar que los pods estén listos (segundos)
 pod_ready_timeout: 300
 pod_ready_retries: 30
-pod_ready_delay: 10DEPLO
+pod_ready_delay: 10
 
 # Réplicas por servicio
 # backend_replicas: 4
@@ -71,10 +95,9 @@ pod_ready_delay: 10DEPLO
 kubeconfig_path: "~/.kube/config"
 
 # ============================================================================
-# COST INFORMATION (Solo informativo - no afecta el despliegue)
+# GCP AUTHENTICATION
 # ============================================================================
-estimated_costs:
-  gke_management: "$74/mes"
-  load_balancer: "$18/mes"
-  total: "$92/mes"
-  free_tier: "$300 créditos por 90 días"
+# Ansible usará Application Default Credentials (ADC) por defecto
+# Para configurar: gcloud auth application-default login
+# O establecer: GOOGLE_APPLICATION_CREDENTIALS=/path/to/service-account.json
+gcp_auth_kind: application

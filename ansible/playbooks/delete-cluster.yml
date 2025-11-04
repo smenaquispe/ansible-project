@@ -1,6 +1,9 @@
 ---
 # Playbook para eliminar cluster GKE
 # Uso: ansible-playbook -i inventory/hosts playbooks/delete-cluster.yml
+#
+# Requisitos:
+#   - ansible-galaxy collection install google.cloud
 
 - name: Delete GKE Cluster
   hosts: gcp
@@ -10,65 +13,68 @@
     - ../group_vars/gcp.yml
 
   tasks:
-    - name: Get GCP project ID
-      set_fact:
-        actual_project_id: "{{ gcp_project_id if (gcp_project_id is defined and gcp_project_id | length > 0) else lookup('pipe', 'gcloud config get-value project 2>/dev/null') }}"
+    - name: Validate GCP project ID
+      ansible.builtin.fail:
+        msg: "gcp_project_id must be defined in group_vars/all.yml"
+      when: gcp_project_id is not defined or gcp_project_id | length == 0
 
     - name: Display cluster to be deleted
-      debug:
+      ansible.builtin.debug:
         msg:
           - "⚠️  WARNING: This will DELETE the following cluster:"
-          - "Project ID:    {{ actual_project_id }}"
+          - "Project ID:    {{ gcp_project_id }}"
           - "Zone:          {{ gcp_zone }}"
           - "Cluster Name:  {{ cluster_name }}"
           - ""
           - "This action CANNOT be undone!"
 
+    - name: Get cluster information
+      google.cloud.gcp_container_cluster_info:
+        location: "{{ gcp_zone }}"
+        project: "{{ gcp_project_id }}"
+        auth_kind: application
+      register: cluster_list
+
     - name: Check if cluster exists
-      command: >
-        gcloud container clusters describe {{ cluster_name }}
-        --zone={{ gcp_zone }}
-        --project={{ actual_project_id }}
-      register: cluster_exists
-      failed_when: false
-      changed_when: false
+      ansible.builtin.set_fact:
+        cluster_exists: "{{ cluster_list.resources | selectattr('name', 'equalto', cluster_name) | list | length > 0 }}"
 
     - name: Cluster not found
-      debug:
+      ansible.builtin.debug:
         msg: "Cluster '{{ cluster_name }}' does not exist in zone '{{ gcp_zone }}'"
-      when: cluster_exists.rc != 0
+      when: not cluster_exists
 
     - name: Confirm deletion
-      pause:
+      ansible.builtin.pause:
         prompt: "Type 'DELETE' to confirm cluster deletion"
       register: confirmation
-      when: cluster_exists.rc == 0
+      when: cluster_exists
 
     - name: Abort if not confirmed
-      fail:
+      ansible.builtin.fail:
         msg: "Deletion cancelled by user"
       when:
-        - cluster_exists.rc == 0
+        - cluster_exists
         - confirmation.user_input != "DELETE"
 
     - name: Delete GKE cluster
-      command: >
-        gcloud container clusters delete {{ cluster_name }}
-        --zone={{ gcp_zone }}
-        --project={{ actual_project_id }}
-        --quiet
+      google.cloud.gcp_container_cluster:
+        name: "{{ cluster_name }}"
+        location: "{{ gcp_zone }}"
+        project: "{{ gcp_project_id }}"
+        auth_kind: application
+        state: absent
       when:
-        - cluster_exists.rc == 0
+        - cluster_exists
         - confirmation.user_input == "DELETE"
       register: deletion_result
 
     - name: Cluster deleted successfully
-      debug:
+      ansible.builtin.debug:
         msg:
           - "✓ Cluster deleted successfully"
-          - "No more costs will be incurred from this cluster"
           - ""
-          - "Check for orphaned resources:"
+          - "To check for orphaned resources, use:"
           - "  gcloud compute forwarding-rules list"
           - "  gcloud compute disks list"
           - "  gcloud compute addresses list"

@@ -116,7 +116,15 @@ else
         echo "$RED Error al ejecutar el playbook$NORMAL"
         exit 1
     end
+    
+    # Aplicar BackendConfig después del deploy
+    echo ""
+    echo "$YELLOW Aplicando BackendConfig...$NORMAL"
+    kubectl apply -f "$PROJECT_ROOT/kubernetes/gcp/backend-config.yaml"
+    echo "$GREEN ✓ BackendConfig aplicado$NORMAL"
 end
+
+
 
 echo ""
 echo "$GREEN========================================================$NORMAL"

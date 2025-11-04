@@ -1,6 +1,9 @@
 ---
 # Playbook para desplegar la aplicación Todo-App en GKE
 # Uso: ansible-playbook -i inventory/hosts playbooks/deploy-gcp.yml
+#
+# Requisitos:
+#   - ansible-galaxy collection install kubernetes.core
 
 - name: Deploy Todo App to GKE
   hosts: gcp
@@ -11,23 +14,18 @@
 
   tasks:
     - name: Display deployment configuration
-      debug:
+      ansible.builtin.debug:
         msg:
           - "Deploying to namespace: {{ k8s_namespace }}"
-          - "Backend replicas:  {{ backend_replicas }}"
-          - "Frontend replicas: {{ frontend_replicas }}"
-          - "DB replicas:       {{ db_replicas }}"
           - "Manifests dir:     {{ k8s_manifests_dir }}"
 
-    - name: Verify kubectl connection
-      command: kubectl cluster-info
+    - name: Verify cluster connection
+      kubernetes.core.k8s_cluster_info:
       register: cluster_info
-      changed_when: false
-      failed_when: cluster_info.rc != 0
+      failed_when: cluster_info.version is not defined
 
     - name: Create namespace
       kubernetes.core.k8s:
-        kubeconfig: "{{ kubeconfig_path }}"
         state: present
         definition:
           apiVersion: v1
@@ -37,14 +35,12 @@
 
     - name: Deploy database
       kubernetes.core.k8s:
-        kubeconfig: "{{ kubeconfig_path }}"
         state: present
         namespace: "{{ k8s_namespace }}"
         src: "{{ k8s_manifests_dir }}/db-gcp.yaml"
 
     - name: Wait for database to be ready
       kubernetes.core.k8s_info:
-        kubeconfig: "{{ kubeconfig_path }}"
         kind: Pod
         namespace: "{{ k8s_namespace }}"
         label_selectors:
@@ -56,14 +52,12 @@
 
     - name: Deploy backend
       kubernetes.core.k8s:
-        kubeconfig: "{{ kubeconfig_path }}"
         state: present
         namespace: "{{ k8s_namespace }}"
         src: "{{ k8s_manifests_dir }}/backend-gcp.yaml"
 
     - name: Wait for backend to be ready
       kubernetes.core.k8s_info:
-        kubeconfig: "{{ kubeconfig_path }}"
         kind: Pod
         namespace: "{{ k8s_namespace }}"
         label_selectors:
@@ -75,14 +69,12 @@
 
     - name: Deploy frontend
       kubernetes.core.k8s:
-        kubeconfig: "{{ kubeconfig_path }}"
         state: present
         namespace: "{{ k8s_namespace }}"
         src: "{{ k8s_manifests_dir }}/frontend-gcp.yaml"
 
     - name: Wait for frontend to be ready
       kubernetes.core.k8s_info:
-        kubeconfig: "{{ kubeconfig_path }}"
         kind: Pod
         namespace: "{{ k8s_namespace }}"
         label_selectors:
@@ -94,33 +86,30 @@
 
     - name: Deploy Ingress
       kubernetes.core.k8s:
-        kubeconfig: "{{ kubeconfig_path }}"
         state: present
         namespace: "{{ k8s_namespace }}"
         src: "{{ k8s_manifests_dir }}/ingress-gcp.yaml"
 
     - name: Get all pods
       kubernetes.core.k8s_info:
-        kubeconfig: "{{ kubeconfig_path }}"
         kind: Pod
         namespace: "{{ k8s_namespace }}"
       register: all_pods
 
     - name: Display pods status
-      debug:
+      ansible.builtin.debug:
         msg: "{{ item.metadata.name }}: {{ item.status.phase }}"
       loop: "{{ all_pods.resources }}"
 
     - name: Get Ingress information
       kubernetes.core.k8s_info:
-        kubeconfig: "{{ kubeconfig_path }}"
         kind: Ingress
         namespace: "{{ k8s_namespace }}"
         name: todo-app-ingress
       register: ingress_info
 
     - name: Display Ingress IP
-      debug:
+      ansible.builtin.debug:
         msg:
           - "✓ Deployment completed successfully!"
           - ""
