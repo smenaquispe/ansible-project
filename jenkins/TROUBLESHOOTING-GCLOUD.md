@@ -42,6 +42,7 @@ docker exec jenkins kubectl version --client
 ```
 
 Salida esperada:
+
 ```
 Google Cloud SDK 546.0.0
 ...
@@ -65,7 +66,7 @@ El script `jenkins/setup-jenkins.fish` o `jenkins/setup-jenkins.sh` ya incluye l
 ## 📝 Notas
 
 - **Versión instalada**: Google Cloud SDK 546.0.0
-- **Plugins incluidos**: 
+- **Plugins incluidos**:
   - `gke-gcloud-auth-plugin`: Autenticación con GKE
   - `kubectl`: Cliente de Kubernetes
   - `anthoscli`: Herramientas Anthos (opcional)

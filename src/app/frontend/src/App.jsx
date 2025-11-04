@@ -165,7 +165,7 @@ function App() {
           <h1>✅ Todo App</h1>
           <p>Stay organized and productive</p>
           <div className="stats">
-            <span className="stat">📝 Tottaaaaaal: {todos.length}</span>
+            <span className="stat">📝 Tottaaaaaaal: {todos.length}</span>
             <span className="stat">⏳ Pending: {pendingCount}</span>
             <span className="stat">✅ Completed: {completedCount}</span>
           </div>
