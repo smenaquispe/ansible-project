@@ -28,11 +28,6 @@ pipeline {
         // Git
         GIT_COMMIT_SHORT = sh(script: "git rev-parse --short HEAD", returnStdout: true).trim()
         BUILD_TAG = "${env.BUILD_NUMBER}-${GIT_COMMIT_SHORT}"
-        
-        // Flags de cambios
-        CODE_CHANGED = 'false'
-        INFRA_CHANGED = 'false'
-        CONFIG_CHANGED = 'false'
     }
     
     options {
@@ -67,10 +62,15 @@ pipeline {
             steps {
                 echo '🔍 Detectando cambios...'
                 script {
+                    // Inicializar flags como booleanos
+                    env.CODE_CHANGED = 'false'
+                    env.INFRA_CHANGED = 'false'
+                    env.CONFIG_CHANGED = 'false'
+                    
                     // Detectar cambios en el código de la aplicación
                     def codeChanges = sh(
                         script: '''
-                            git diff --name-only HEAD~1 HEAD | grep -E '^src/' || true
+                            git diff --name-only HEAD~1 HEAD 2>/dev/null | grep -E '^src/' || true
                         ''',
                         returnStdout: true
                     ).trim()
@@ -84,7 +84,7 @@ pipeline {
                     // Detectar cambios en infraestructura (Ansible/K8s)
                     def infraChanges = sh(
                         script: '''
-                            git diff --name-only HEAD~1 HEAD | grep -E '^(ansible/|kubernetes/)' || true
+                            git diff --name-only HEAD~1 HEAD 2>/dev/null | grep -E '^(ansible/|kubernetes/)' || true
                         ''',
                         returnStdout: true
                     ).trim()
@@ -98,7 +98,7 @@ pipeline {
                     // Detectar cambios en configuración
                     def configChanges = sh(
                         script: '''
-                            git diff --name-only HEAD~1 HEAD | grep -E '^(config\\.env|ansible/group_vars/)' || true
+                            git diff --name-only HEAD~1 HEAD 2>/dev/null | grep -E '^(config\\.env|ansible/group_vars/)' || true
                         ''',
                         returnStdout: true
                     ).trim()
@@ -115,13 +115,20 @@ pipeline {
                         env.INFRA_CHANGED = 'true'
                         echo "⚠️ Primer build - construyendo todo"
                     }
+                    
+                    // Debug: mostrar valores de las flags
+                    echo "DEBUG - CODE_CHANGED: ${env.CODE_CHANGED}"
+                    echo "DEBUG - INFRA_CHANGED: ${env.INFRA_CHANGED}"
+                    echo "DEBUG - CONFIG_CHANGED: ${env.CONFIG_CHANGED}"
                 }
             }
         }
         
         stage('Setup Python Environment') {
             when {
-                expression { env.CODE_CHANGED == 'true' || env.INFRA_CHANGED == 'true' }
+                expression { 
+                    return env.CODE_CHANGED == 'true' || env.INFRA_CHANGED == 'true'
+                }
             }
             steps {
                 echo '🐍 Configurando entorno Python...'
@@ -139,7 +146,9 @@ pipeline {
         
         stage('Run Tests') {
             when {
-                expression { env.CODE_CHANGED == 'true' }
+                expression { 
+                    return env.CODE_CHANGED == 'true'
+                }
             }
             steps {
                 echo '🧪 Ejecutando tests...'
@@ -164,10 +173,17 @@ pipeline {
         
         stage('Build Docker Images') {
             when {
-                expression { env.CODE_CHANGED == 'true' }
+                expression { 
+                    return env.CODE_CHANGED == 'true'
+                }
             }
             parallel {
                 stage('Build Frontend') {
+                    when {
+                        expression { 
+                            return env.CODE_CHANGED == 'true'
+                        }
+                    }
                     steps {
                         echo '🏗️ Construyendo imagen Frontend...'
                         dir('src/app/frontend') {
@@ -180,6 +196,11 @@ pipeline {
                 }
                 
                 stage('Build Backend') {
+                    when {
+                        expression { 
+                            return env.CODE_CHANGED == 'true'
+                        }
+                    }
                     steps {
                         echo '🏗️ Construyendo imagen Backend...'
                         dir('src/app/backend') {
@@ -192,6 +213,11 @@ pipeline {
                 }
                 
                 stage('Build Database') {
+                    when {
+                        expression { 
+                            return env.CODE_CHANGED == 'true'
+                        }
+                    }
                     steps {
                         echo '🏗️ Construyendo imagen Database...'
                         dir('src/app/db') {
@@ -207,7 +233,9 @@ pipeline {
         
         stage('Push Docker Images') {
             when {
-                expression { env.CODE_CHANGED == 'true' }
+                expression { 
+                    return env.CODE_CHANGED == 'true'
+                }
             }
             steps {
                 echo '📤 Publicando imágenes a GCR...'
@@ -236,7 +264,9 @@ pipeline {
         
         stage('Verify or Create Cluster') {
             when {
-                expression { env.INFRA_CHANGED == 'true' || env.CODE_CHANGED == 'true' }
+                expression { 
+                    return env.INFRA_CHANGED == 'true' || env.CODE_CHANGED == 'true'
+                }
             }
             steps {
                 echo '🔍 Verificando cluster GKE...'
@@ -273,7 +303,9 @@ pipeline {
         
         stage('Update Infrastructure') {
             when {
-                expression { env.INFRA_CHANGED == 'true' }
+                expression { 
+                    return env.INFRA_CHANGED == 'true'
+                }
             }
             steps {
                 echo '🔧 Actualizando infraestructura...'
@@ -290,7 +322,9 @@ pipeline {
         
         stage('Deploy Application') {
             when {
-                expression { env.CODE_CHANGED == 'true' || env.CONFIG_CHANGED == 'true' }
+                expression { 
+                    return env.CODE_CHANGED == 'true' || env.CONFIG_CHANGED == 'true'
+                }
             }
             steps {
                 echo '🚀 Desplegando aplicación...'
@@ -307,7 +341,9 @@ pipeline {
         
         stage('Verify Deployment') {
             when {
-                expression { env.CODE_CHANGED == 'true' || env.INFRA_CHANGED == 'true' }
+                expression { 
+                    return env.CODE_CHANGED == 'true' || env.INFRA_CHANGED == 'true'
+                }
             }
             steps {
                 echo '✅ Verificando despliegue...'
@@ -329,7 +365,9 @@ pipeline {
         
         stage('Health Check') {
             when {
-                expression { env.CODE_CHANGED == 'true' }
+                expression { 
+                    return env.CODE_CHANGED == 'true'
+                }
             }
             steps {
                 echo '🏥 Verificando salud de la aplicación...'
@@ -371,7 +409,7 @@ pipeline {
         success {
             echo '✅ Pipeline completado exitosamente!'
             script {
-                // Limpiar imágenes locales para ahorrar espacio (si Docker está disponible)
+                // Limpiar imágenes locales para ahorrar espacio
                 try {
                     sh """
                         docker image prune -f
