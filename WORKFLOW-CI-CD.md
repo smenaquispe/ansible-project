@@ -17,6 +17,7 @@ Usa los scripts de Fish para crear el cluster e infraestructura inicial:
 ```
 
 Esto creará:
+
 - ✅ Cluster GKE con 2 nodos (configurado en `ansible/group_vars/all.yml`)
 - ✅ Namespace `todo-app`
 - ✅ Deployments: frontend, backend, database
@@ -28,6 +29,7 @@ Esto creará:
 Una vez creada la infraestructura, Jenkins se encarga de:
 
 #### **Cuando cambias CÓDIGO** (archivos en `src/`):
+
 1. ✅ Detecta cambios en código
 2. ✅ Ejecuta tests
 3. ✅ Construye imágenes Docker
@@ -52,6 +54,7 @@ kubectl set image deployment/todo-db \
 ```
 
 #### **Cuando cambias INFRAESTRUCTURA** (archivos en `kubernetes/` o `ansible/`):
+
 1. ✅ Detecta cambios en manifests
 2. ✅ Se conecta al cluster
 3. ✅ Aplica los manifests modificados con `kubectl apply`
@@ -60,11 +63,13 @@ kubectl set image deployment/todo-db \
 ## 🎯 ¿Qué hace cada herramienta?
 
 ### **Scripts de Fish (Ansible)**
+
 - ✅ Crear/eliminar cluster
 - ✅ Despliegue inicial completo
 - ✅ Configuración de infraestructura
 
 ### **Jenkins CI/CD**
+
 - ✅ Detección automática de cambios
 - ✅ Tests automáticos
 - ✅ Build y push de imágenes Docker
@@ -74,6 +79,7 @@ kubectl set image deployment/todo-db \
 ## 📝 Comandos Útiles
 
 ### Verificar estado del cluster
+
 ```bash
 kubectl get nodes
 kubectl get all -n todo-app
@@ -81,6 +87,7 @@ kubectl get ingress -n todo-app
 ```
 
 ### Recrear infraestructura (si es necesario)
+
 ```bash
 # Eliminar cluster
 ./scripts/delete-cluster.fish
@@ -91,6 +98,7 @@ kubectl get ingress -n todo-app
 ```
 
 ### Actualización manual (sin Jenkins)
+
 ```bash
 # Redesplegar con Ansible
 ./scripts/deploy.fish --update
@@ -102,6 +110,7 @@ kubectl rollout restart deployment/todo-db -n todo-app
 ```
 
 ### Ver logs
+
 ```bash
 # Backend
 kubectl logs -l app=todo-backend -n todo-app --tail=50 -f
@@ -116,15 +125,17 @@ kubectl logs -l app=todo-db -n todo-app --tail=50 -f
 ## 🔧 Configuración
 
 ### Cluster (en `ansible/group_vars/all.yml`)
+
 ```yaml
 cluster_name: todo-app-cluster
-machine_type: e2-small      # 2 vCPUs, 2 GB RAM
-num_nodes: 2                # 2 nodos totales en la región
-min_nodes: 2                # Mínimo para autoscaling
-max_nodes: 5                # Máximo para autoscaling
+machine_type: e2-small # 2 vCPUs, 2 GB RAM
+num_nodes: 2 # 2 nodos totales en la región
+min_nodes: 2 # Mínimo para autoscaling
+max_nodes: 5 # Máximo para autoscaling
 ```
 
 ### Jenkins (en `Jenkinsfile`)
+
 ```groovy
 environment {
     PROJECT_ID = credentials('gcp-project-id')
@@ -192,20 +203,26 @@ kubectl get pods -n todo-app
 ## 🐛 Troubleshooting
 
 ### "Error: namespace 'todo-app' no existe"
+
 **Solución:** Ejecuta primero `./scripts/deploy.fish` para crear la infraestructura
 
 ### "Error: cluster not found"
+
 **Solución:** Ejecuta `./scripts/create-cluster.fish` para crear el cluster
 
 ### "Timeout waiting for rollout"
+
 **Solución:** Verifica los logs de los pods:
+
 ```bash
 kubectl describe pod <pod-name> -n todo-app
 kubectl logs <pod-name> -n todo-app
 ```
 
 ### "Quota exceeded"
+
 **Solución:** Verifica tu configuración en `all.yml`:
+
 - `num_nodes: 2` (no más de 2-4 nodos)
 - `machine_type: e2-small` (máquinas pequeñas)
 - Elimina recursos no usados en GCP
