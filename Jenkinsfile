@@ -16,7 +16,7 @@ pipeline {
     environment {
         // Configuración de proyecto
         PROJECT_ID = credentials('gcp-project-id')
-        GCP_REGION = 'us-central1'
+        GCP_REGION = 'us-central1-a'
         GKE_CLUSTER = 'todo-app-cluster'
         
         // Configuración de Docker
