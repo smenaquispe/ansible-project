@@ -269,55 +269,30 @@ pipeline {
             }
         }
         
-        stage('Verify or Create Cluster') {
+        stage('Connect to Cluster') {
             when {
                 expression { 
-                    return env.INFRA_CHANGED == 'true' || env.CODE_CHANGED == 'true'
+                    return env.CODE_CHANGED == 'true' || env.INFRA_CHANGED == 'true'
                 }
             }
             steps {
-                echo '🔍 Verificando cluster GKE...'
+                echo '� Conectando al cluster GKE existente...'
                 withCredentials([file(credentialsId: 'gcp-service-account-key', variable: 'GCP_KEY_FILE')]) {
-                    script {
-                        def clusterExists = sh(
-                            script: '''
-                                gcloud auth activate-service-account --key-file="$GCP_KEY_FILE"
-                                gcloud config set project "$PROJECT_ID"
-                                gcloud container clusters describe "$GKE_CLUSTER" --region="$GCP_REGION" 2>/dev/null
-                            ''',
-                            returnStatus: true
-                        )
+                    sh '''
+                        gcloud auth activate-service-account --key-file="$GCP_KEY_FILE"
+                        gcloud config set project "$PROJECT_ID"
                         
-                        if (clusterExists != 0) {
-                            echo '🆕 Cluster no existe, creando con gcloud...'
-                            sh '''
-                                gcloud auth activate-service-account --key-file="$GCP_KEY_FILE"
-                                gcloud config set project "$PROJECT_ID"
-                                
-                                # Crear cluster usando gcloud directamente
-                                gcloud container clusters create "$GKE_CLUSTER" \
-                                    --region "$GCP_REGION" \
-                                    --num-nodes 3 \
-                                    --machine-type e2-medium \
-                                    --disk-size 20 \
-                                    --enable-autoscaling \
-                                    --min-nodes 1 \
-                                    --max-nodes 5 \
-                                    --enable-autorepair \
-                                    --enable-autoupgrade
-                            '''
-                        } else {
-                            echo '✅ Cluster ya existe'
-                        }
+                        # Obtener credenciales del cluster existente
+                        echo "Obteniendo credenciales del cluster $GKE_CLUSTER..."
+                        gcloud container clusters get-credentials "$GKE_CLUSTER" \
+                            --region "$GCP_REGION" \
+                            --project "$PROJECT_ID"
                         
-                        // Siempre obtener credenciales del cluster al final
-                        echo '🔐 Obteniendo credenciales del cluster...'
-                        sh '''
-                            gcloud container clusters get-credentials "$GKE_CLUSTER" \
-                                --region "$GCP_REGION" \
-                                --project "$PROJECT_ID"
-                        '''
-                    }
+                        # Verificar conectividad
+                        echo "Verificando conectividad con el cluster..."
+                        kubectl cluster-info || echo "⚠️  Advertencia: No se pudo conectar al cluster"
+                        kubectl get nodes || echo "⚠️  Advertencia: No se pudieron listar los nodos"
+                    '''
                 }
             }
         }
