@@ -136,7 +136,11 @@ pipeline {
                     # Instalar uv si no está instalado
                     if ! command -v uv &> /dev/null; then
                         curl -LsSf https://astral.sh/uv/install.sh | sh
+                        export PATH="$HOME/.local/bin:$PATH"
                     fi
+                    
+                    # Usar ruta completa de uv
+                    export PATH="$HOME/.local/bin:$PATH"
                     
                     # Sincronizar dependencias
                     uv sync
@@ -153,6 +157,7 @@ pipeline {
             steps {
                 echo '🧪 Ejecutando tests...'
                 sh '''
+                    export PATH="$HOME/.local/bin:$PATH"
                     uv run pytest tests/ -v --cov=scripts --cov-report=term-missing --cov-report=html
                 '''
             }
